@@ -25,13 +25,26 @@ export async function inlineModules(paths) {
 const ORDER = ['src/protocol.js', 'src/transport.js', 'src/transport-web.js',
                'src/strip.js', 'src/ui.js', 'src/main.js'];
 
-export async function build() {
-  const present = [];
+/* main.js resolves its transport with a dynamic import, which has nothing to
+   resolve against once everything is one classic script. Hand it a factory
+   instead — WebBluetoothTransport is already inlined above this point. */
+const TRANSPORT_SHIM =
+  '\nglobalThis.__LED_TRANSPORT__ = () => new WebBluetoothTransport();\n';
+
+export async function buildScript() {
+  const parts = [];
   for (const p of ORDER) {
-    try { await readFile(join(root, p)); present.push(p); }
-    catch { /* not written yet — earlier phases build a partial page */ }
+    try { await readFile(join(root, p)); }
+    catch { continue; }                    // not written yet — partial page is fine
+    if (p === 'src/main.js') parts.push(TRANSPORT_SHIM);
+    parts.push(await inlineModules([p]));
   }
-  const js   = await inlineModules(present);
+  // main.js uses top-level await, which only modules allow. Wrap the lot.
+  return '(async () => {\n' + parts.join('\n') + '\n})();';
+}
+
+export async function build() {
+  const js   = await buildScript();
   const css  = await readFile(join(root, 'src/app.css'), 'utf8').catch(() => '');
   const html = await readFile(join(root, 'src/index.html'), 'utf8');
 

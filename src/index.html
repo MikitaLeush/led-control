@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>LED Control</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="glow"></div>
+
+<div class="wrap">
+  <div class="mast">
+    <h1>LED Control</h1>
+    <span class="where">two strips, one room</span>
+  </div>
+  <p class="lede">Lotus Lantern and iStrip+ speak different protocols. This drives both.</p>
+
+  <label class="opt">
+    <input type="checkbox" id="narrow">
+    Narrow the device picker — hides unrelated Bluetooth devices, and sometimes yours
+  </label>
+
+  <div class="status" id="btstatus">Checking Bluetooth…</div>
+
+  <div id="master"></div>
+
+  <p class="sect">Individual strips</p>
+  <div id="panels"></div>
+
+  <p class="note">
+    The first connect is one tap per strip — the browser grants one device per prompt.
+    After that they reconnect on their own while the app stays open.
+    Add <code>?selftest=1</code> to print every command frame without any hardware.
+  </p>
+
+  <div id="selftest"></div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
