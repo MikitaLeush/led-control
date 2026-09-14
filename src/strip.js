@@ -27,24 +27,42 @@ export const memoryStore = (() => {
   };
 })();
 
-const RETRY_CAP_MS   = 15000;
-const RETRY_GIVEUP_MS = 120000;
+const DEFAULTS = {
+  firstDelayMs: 1000,       // first retry after a drop
+  retryCapMs: 15000,        // backoff ceiling
+  connectTimeoutMs: 12000   // a connect that hasn't landed by now is not going to
+};
+
+/* A gatt.connect() to a peripheral that has stopped advertising can simply never
+   settle. Without this the retry ladder stalls forever on a promise that will
+   not resolve — the app thinks it is still trying and never tries again. */
+function withTimeout(promise, ms, label) {
+  let timer;
+  const bell = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+    if (typeof timer === 'object' && timer.unref) timer.unref();
+  });
+  return Promise.race([promise, bell]).finally(() => clearTimeout(timer));
+}
 
 export class Strip {
-  constructor(profile, transport, store = memoryStore) {
+  constructor(profile, transport, store = memoryStore, opts = {}) {
     this.p = profile;
     this.transport = transport;
     this.store = store;
+    this.opts = { ...DEFAULTS, ...opts };
     this.handle = null;
     this.wantConnected = false;      // false after a deliberate Disconnect
     this.retryTimer = null;
-    this.retryStarted = 0;
     this.attempt = 0;
     this.listeners = [];
     this.remembered = store.get(profile.id);
   }
 
   get connected() { return !!this.handle; }
+  /* Trying to get back on its own. The UI shows this, but must never use it to
+     disable the manual Connect button — that removes the only way out. */
+  get retrying() { return !this.handle && this.wantConnected; }
   get deviceName() { return (this.handle && this.handle.name) || null; }
 
   onChange(fn) { this.listeners.push(fn); }
@@ -53,6 +71,10 @@ export class Strip {
   /* ---- connecting ---- */
 
   async connect(opts = {}) {
+    // A manual connect supersedes any pending automatic retry, so the two
+    // cannot race and open two links to the same strip.
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
     try {
       this.emit('requesting device…');
       const dev = await this.transport.pick(this.p, opts);
@@ -86,9 +108,9 @@ export class Strip {
 
   async attach(id) {
     this.wantConnected = true;
-    this.handle = await this.transport.open(this.p, id);
+    this.handle = await withTimeout(this.transport.open(this.p, id),
+                                    this.opts.connectTimeoutMs, 'connect timed out');
     this.attempt = 0;
-    this.retryStarted = 0;
     this.transport.onDrop(this.handle, () => this.onDrop());
     this.remembered = { id: this.handle.id, name: this.handle.name };
     this.store.set(this.p.id, this.remembered);
@@ -114,23 +136,24 @@ export class Strip {
   }
 
   /* Reopening an already-permitted device needs no user gesture, so a strip that
-     goes out of range comes back on its own while the app stays open. */
+     drops comes back on its own.
+
+     No deadline. An ELK-BLEDOM drops an idle link as a matter of course and may
+     not be connectable again for a while; abandoning the attempt turns a
+     recoverable state into one the user has to fix by hand. This keeps trying
+     until the user disconnects, backing off to one attempt every 15s so it costs
+     nothing to leave running. */
   scheduleRetry() {
-    if (!this.retryStarted) this.retryStarted = Date.now();
-    if (Date.now() - this.retryStarted > RETRY_GIVEUP_MS) {
-      this.wantConnected = false;
-      this.retryTimer = null;
-      this.emit('lost connection — gave up after 2 min, press Connect', true);
-      return;
-    }
-    const delay = Math.min(1000 * Math.pow(2, this.attempt++), RETRY_CAP_MS);
-    this.emit('connection dropped — retrying in ' + Math.round(delay / 1000) + 's…');
+    const { firstDelayMs, retryCapMs } = this.opts;
+    const delay = Math.min(firstDelayMs * Math.pow(2, this.attempt++), retryCapMs);
+    this.emit('connection dropped — reconnecting, retry in '
+            + Math.max(1, Math.round(delay / 1000)) + 's…');
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(async () => {
       this.retryTimer = null;
       if (!this.wantConnected || !this.remembered) return;
       try { await this.attach(this.remembered.id); }
-      catch { this.scheduleRetry(); }
+      catch { if (this.wantConnected) this.scheduleRetry(); }
     }, delay);
     // Node would hold the process open for this timer; the browser has no unref.
     if (typeof this.retryTimer === 'object' && this.retryTimer.unref) this.retryTimer.unref();

@@ -119,13 +119,15 @@ export class DevicePanel {
 
   refresh() {
     const s = this.strip, p = this.p;
-    const retrying = !s.connected && s.wantConnected;
-    this.dot.className = 'dot' + (s.connected ? ' on' : retrying ? ' busy' : '');
+    this.dot.className = 'dot' + (s.connected ? ' on' : s.retrying ? ' busy' : '');
     this.title.textContent = s.deviceName || p.name;
     this.controls.disabled = !s.connected;
-    this.btnCon.disabled = s.connected || retrying;
-    this.btnDis.disabled = !s.connected && !retrying;
+    // Never disabled while retrying. Automatic recovery is a convenience; taking
+    // away the manual escape while it runs is how a stuck retry becomes a dead app.
+    this.btnCon.disabled = s.connected;
+    this.btnDis.disabled = !s.connected && !s.retrying;
     this.btnCon.textContent = s.connected ? 'Connected'
+      : s.retrying ? 'Reconnecting — tap to choose again'
       : (s.remembered && s.remembered.name) ? `Reconnect ${s.remembered.name}`
       : 'Connect';
     this.syncWidgets();
