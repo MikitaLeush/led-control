@@ -1,0 +1,11 @@
+{
+  "name": "led-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop and Android control for Lotus Lantern and iStrip+ BLE LED strips",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "build:singlefile": "node scripts/build-singlefile.mjs"
+  }
+}
