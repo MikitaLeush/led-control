@@ -26,7 +26,8 @@ export class FakeTransport extends Transport {
   constructor() {
     super();
     this.writes = [];
-    this.opened = new Map();
+    this.opened = new Map();      // currently connected
+    this.permitted = new Map();   // ever granted — survives close(), like getDevices()
     this.drops  = new Map();
   }
 
@@ -37,6 +38,7 @@ export class FakeTransport extends Transport {
   async open(profile, id) {
     const h = { id, name: 'Fake ' + profile.id, profile, noResponse: true };
     this.opened.set(id, h);
+    this.permitted.set(id, h);
     return h;
   }
 
@@ -53,8 +55,9 @@ export class FakeTransport extends Transport {
     if (cb) cb();
   }
 
+  /* Permission outlives the connection, as it does in both real transports. */
   async listKnown(profile, knownIds = []) {
-    return [...this.opened.values()]
+    return [...this.permitted.values()]
       .filter(h => h.profile.id === profile.id)
       .map(h => ({ id: h.id, name: h.name }));
   }

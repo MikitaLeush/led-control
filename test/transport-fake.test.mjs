@@ -34,9 +34,12 @@ test('listKnown does not leak devices across profiles', async () => {
   assert.deepEqual((await t.listKnown(PROFILES.istrip)).map(d => d.id), ['fake-istrip']);
 });
 
-test('close removes the handle', async () => {
+test('close disconnects but does not revoke permission', async () => {
   const t = new FakeTransport();
   const h = await t.open(PROFILES.lotus, 'fake-lotus');
   t.close(h);
-  assert.deepEqual(await t.listKnown(PROFILES.lotus), []);
+  assert.equal(t.opened.has('fake-lotus'), false, 'no longer connected');
+  assert.deepEqual(await t.listKnown(PROFILES.lotus),
+                   [{ id: 'fake-lotus', name: 'Fake lotus' }],
+                   'still listed — getDevices() does not forget a device on disconnect');
 });
