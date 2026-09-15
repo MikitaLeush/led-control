@@ -26,6 +26,11 @@ const say = (html, bad) => {
   status.classList.toggle('flag', !!bad);
 };
 
+/* An Electron shell answers the Bluetooth chooser for us. It cannot skip the
+   user gesture — requestDevice() still needs a tap, and Electron exposes no
+   getDevices() — so this is "one tap, no dialog", not a silent cold start. */
+const host = (globalThis.ledHost && globalThis.ledHost.isElectron) ? globalThis.ledHost : null;
+
 const transport = await makeTransport();
 const app = bootstrap({
   transport,
@@ -38,6 +43,9 @@ const app = bootstrap({
 const cap = await transport.available();
 if (!cap.ok) {
   say(cap.reason, true);
+} else if (host) {
+  say('Bluetooth ready · no device dialog — tap Connect once per strip after a restart, '
+    + 'then it stays connected on its own');
 } else if (cap.silentReconnect) {
   say('Bluetooth ready · reconnects without asking');
   let back = 0;
@@ -48,11 +56,47 @@ if (!cap.ok) {
     + '<code>chrome://flags/#enable-web-bluetooth-new-permissions-backend</code> to skip it');
 }
 
-/* Let a host shell (Electron) answer the chooser for us. Wired in the Electron task;
-   harmless everywhere else. */
-if (globalThis.ledHost && globalThis.ledHost.isElectron) {
-  globalThis.ledHost.remember(app.strips.map(s => s.remembered && s.remembered.name)
-                                        .filter(Boolean));
+/* ── host shell bridge ─────────────────────────────────────────────────────
+   In Electron the main process answers the Bluetooth chooser. Once it knows a
+   strip's name it reconnects silently; the first time, it sends the scan results
+   here and we draw the picker ourselves. Harmless in a plain browser. */
+if (host) {
+  const known = () => app.strips.map(s => s.remembered && s.remembered.name).filter(Boolean);
+  host.remember(known());
+  app.strips.forEach(s => s.onChange(() => host.remember(known())));
+
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  sheet.hidden = true;
+  sheet.innerHTML = `
+    <div class="sheet-card">
+      <p class="sheet-title">Choose a strip</p>
+      <div class="sheet-list"></div>
+      <button class="sheet-cancel">Cancel</button>
+    </div>`;
+  document.body.appendChild(sheet);
+
+  const list = sheet.querySelector('.sheet-list');
+  const closeSheet = id => { sheet.hidden = true; list.innerHTML = ''; host.pickDevice(id); };
+  sheet.querySelector('.sheet-cancel').onclick = () => closeSheet('');
+
+  host.onDevices(devices => {
+    list.innerHTML = '';
+    for (const d of devices) {
+      const b = document.createElement('button');
+      b.className = 'sheet-item';
+      b.textContent = d.name;
+      b.onclick = () => closeSheet(d.id);
+      list.appendChild(b);
+    }
+    if (!devices.length) {
+      const p = document.createElement('p');
+      p.className = 'sheet-empty';
+      p.textContent = 'Scanning…';
+      list.appendChild(p);
+    }
+    sheet.hidden = false;
+  });
 }
 
 /* ── ?selftest=1 — every frame, and proof the AES is real AES ──────────────── */

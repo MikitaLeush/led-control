@@ -122,6 +122,24 @@ to the renderer, which draws an in-app picker; the user's click sends back an id
 If nothing is chosen within the scan window the handler must call `callback('')`, which
 cancels cleanly. Failing to answer at all leaves `requestDevice()` hanging forever.
 
+**Correction, measured against Electron 44 rather than assumed.** An earlier draft of this
+document claimed the desktop app would "cold-start straight into connected". It will not.
+Electron exposes **no `getDevices()`**, and `requestDevice()` still requires transient user
+activation — calling it on load fails with
+`SecurityError: Must be handling a user gesture`. What the shell actually removes is the
+*dialog*, not the tap:
+
+| | Browser | Electron |
+|---|---|---|
+| First connect after launch | chooser dialog, one tap | no dialog, one tap |
+| Reconnect after a drop | automatic | automatic |
+| Across restarts | chooser again | one tap, no dialog |
+
+Reconnection after a drop needs no gesture in either, because the `BluetoothDevice` object
+is still held in memory and `gatt.connect()` may be called on it freely. True silent
+cold-start remains an Android-only property, where `BleClient.getDevices([id])` reopens a
+remembered device with no gesture and no flag.
+
 ### Android specifics
 
 `AndroidManifest.xml` needs `BLUETOOTH_SCAN` (with `usesPermissionFlags="neverForLocation"`),

@@ -239,3 +239,27 @@ pre.selftest{
 @media (prefers-reduced-motion: reduce){
   *{ animation: none !important; transition: none !important }
 }
+
+/* ── host picker (Electron first run) ─────────────────────── */
+.sheet{
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: #05060980; backdrop-filter: blur(3px);
+  padding: 16px;
+}
+.sheet-card{
+  width: 100%; max-width: 420px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 14px;
+}
+.sheet-title{
+  margin: 2px 2px 11px; font-size: 13px; color: var(--muted);
+}
+.sheet-list{ display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px }
+.sheet-item{
+  width: 100%; text-align: left; font-family: var(--font-data); font-size: 13px;
+}
+.sheet-empty{
+  margin: 0; padding: 12px 2px; font: 12px/1 var(--font-data); color: var(--faint);
+}
+.sheet-cancel{ width: 100% }

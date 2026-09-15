@@ -6,6 +6,11 @@
   "description": "Desktop and Android control for Lotus Lantern and iStrip+ BLE LED strips",
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
-    "build:singlefile": "node scripts/build-singlefile.mjs"
+    "build:singlefile": "node scripts/build-singlefile.mjs",
+    "serve": "node scripts/serve.mjs",
+    "start": "electron electron/main.js"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0"
   }
 }
