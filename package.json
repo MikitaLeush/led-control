@@ -8,9 +8,17 @@
     "test": "node --test \"test/**/*.test.mjs\"",
     "build:singlefile": "node scripts/build-singlefile.mjs",
     "serve": "node scripts/serve.mjs",
-    "start": "electron electron/main.js"
+    "start": "electron electron/main.js",
+    "sync:vendor": "node scripts/sync-vendor.mjs",
+    "sync:android": "npm run sync:vendor && npx cap sync android"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "electron": "^44.3.0"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "^8.3.0",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
   }
 }

@@ -50,6 +50,10 @@ export async function build() {
 
   const out = html
     .replace(/[ \t]*<link[^>]+app\.css[^>]*>\n?/, `<style>\n${css}\n</style>\n`)
+    // The Capacitor runtime is for the APK only; the standalone page is pure
+    // Web Bluetooth and must not depend on files next to it.
+    .replace(/[ \t]*<!--\s*Capacitor runtime[\s\S]*?-->\n?/, '')
+    .replace(/[ \t]*<script src="\.\/vendor\/[^"]*"><\/script>\n?/g, '')
     .replace(/[ \t]*<script type="module"[^>]*>\s*<\/script>\n?/,
              `<script>\n"use strict";\n${js}\n</script>\n`);
 
