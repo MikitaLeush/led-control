@@ -35,6 +35,11 @@
 *{ box-sizing: border-box }
 html,body{ margin:0; padding:0 }
 
+/* The UA rule for [hidden] is display:none at specificity (0,1,0) — any author
+   rule that sets display on a class wins over it and silently un-hides the
+   element. Restate it here, in author scope, so el.hidden always works. */
+[hidden]{ display: none !important }
+
 body{
   min-height: 100dvh;
   background: var(--ground);
