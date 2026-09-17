@@ -20,6 +20,10 @@ function ble() {
 }
 
 export class CapacitorBleTransport extends Transport {
+  /* Native scans and matches in software, so a device can be found with no
+     gesture and no dialog. */
+  get canPickSilently() { return true; }
+
   async available() {
     try {
       const { BleClient } = ble();
@@ -39,7 +43,7 @@ export class CapacitorBleTransport extends Transport {
      software — by GAP name (Lotus) or manufacturer data (iStrip) — so do the
      same and connect to the first strip that matches. Falls back to the dialog
      only if the scan finds nothing, so there is still a way through. */
-  async pick(profile, { scanMs = 8000 } = {}) {
+  async pick(profile, { scanMs = 8000, noDialog = false } = {}) {
     const { BleClient, dataViewToNumbers } = ble();
 
     const found = await new Promise(resolve => {
@@ -68,14 +72,16 @@ export class CapacitorBleTransport extends Transport {
     if (found && found.id) return found;
     if (found && found.error) throw found.error;
 
-    // Nothing matched in the scan window — let the user point at it by hand.
+    // Nothing matched. An automatic re-pick must not put a dialog in front of
+    // someone who did not ask for one.
+    if (noDialog) throw new Error('no ' + profile.name + ' found in range');
     const dev = await BleClient.requestDevice({ optionalServices: [profile.service] });
     return { id: dev.deviceId, name: dev.name || profile.name };
   }
 
-  async open(profile, id) {
+  async open(profile, id, nameHint) {
     const { BleClient } = ble();
-    const handle = { id, name: profile.name, profile, noResponse: true };
+    const handle = { id, name: nameHint || profile.name, profile, noResponse: true };
     await BleClient.connect(id, () => { if (handle._onDrop) handle._onDrop(); });
     return handle;
   }

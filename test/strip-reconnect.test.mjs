@@ -91,3 +91,54 @@ test('disconnect stops the ladder for good', async () => {
   assert.equal(t.opens, seen, 'no further attempts after a deliberate disconnect');
   assert.equal(s.wantConnected, false);
 });
+
+/* A remembered device that no longer exists. Happened for real: the Lotus id in
+   localStorage was BE:68:AE:0D:32:1A while the strip actually advertising was
+   BE:68:C1:0D:06:08 ("ELK-BLEDDM 02"). The app retried the ghost forever. */
+class GhostTransport extends Transport {
+  constructor(){ super(); this.opens = []; this.picks = 0; this.realId = 'real-device'; }
+  get canPickSilently() { return true; }
+  async available(){ return { ok: true, silentReconnect: true }; }
+  async pick(profile){ this.picks++; return { id: this.realId, name: 'ELK-BLEDDM 02' }; }
+  async open(profile, id, nameHint){
+    this.opens.push(id);
+    if (id !== this.realId) throw new Error('device unreachable');
+    return { id, name: nameHint || 'ELK-BLEDDM 02', profile, noResponse: true };
+  }
+  async write(){} close(){} onDrop(h,cb){ this.cb = cb; } async listKnown(){ return []; }
+}
+
+test('a remembered device that never answers is abandoned for a fresh scan', async () => {
+  const t = new GhostTransport();
+  const store = newStore();
+  store.set('lotus', { id: 'ghost-device', name: 'Lotus Lantern' });   // the stale id
+
+  const s = new Strip(PROFILES.lotus, t, store,
+                      { firstDelayMs: 5, retryCapMs: 10, connectTimeoutMs: 40,
+                        repickAfter: 3 });
+  s.wantConnected = true;
+  s.scheduleRetry();
+  await wait(300);
+
+  assert.ok(t.picks >= 1, 'it eventually re-scanned instead of retrying the ghost forever');
+  assert.equal(s.connected, true, 'and connected to the device that is actually there');
+  assert.equal(store.get('lotus').id, 'real-device', 'the stale id was replaced');
+  s.disconnect();
+});
+
+test('a transport that cannot pick silently never re-picks on its own', async () => {
+  const t = new GhostTransport();
+  Object.defineProperty(t, 'canPickSilently', { get: () => false });
+  const store = newStore();
+  store.set('lotus', { id: 'ghost-device', name: 'Lotus Lantern' });
+
+  const s = new Strip(PROFILES.lotus, t, store,
+                      { firstDelayMs: 5, retryCapMs: 10, connectTimeoutMs: 40,
+                        repickAfter: 2 });
+  s.wantConnected = true;
+  s.scheduleRetry();
+  await wait(200);
+
+  assert.equal(t.picks, 0, 'no dialog may appear without the user asking for it');
+  s.disconnect();
+});

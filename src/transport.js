@@ -6,6 +6,11 @@
 import { hex } from './protocol.js';
 
 export class Transport {
+  /* True when pick() can find a device with no user gesture and no dialog — i.e.
+     the platform lets us scan and match in software. Only the native build can.
+     It is what allows recovery from a stale remembered device without the user. */
+  get canPickSilently() { return false; }
+
   /** → { ok, reason?, silentReconnect } — can we work here, and can we skip the picker? */
   async available() { return { ok: false, reason: 'not implemented', silentReconnect: false }; }
   /** User-facing device selection. → { id, name } */
@@ -23,6 +28,8 @@ export class Transport {
 /* Test double. No hardware, records every byte, and can fake a disconnect so the
    reconnect logic in strip.js is testable without a strip. */
 export class FakeTransport extends Transport {
+  get canPickSilently() { return this.silentPick !== false; }
+
   constructor() {
     super();
     this.writes = [];

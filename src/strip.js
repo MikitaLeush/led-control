@@ -30,7 +30,8 @@ export const memoryStore = (() => {
 const DEFAULTS = {
   firstDelayMs: 1000,       // first retry after a drop
   retryCapMs: 15000,        // backoff ceiling
-  connectTimeoutMs: 12000   // a connect that hasn't landed by now is not going to
+  connectTimeoutMs: 12000,  // a connect that hasn't landed by now is not going to
+  repickAfter: 4            // failed reconnects before the remembered id is suspect
 };
 
 /* A gatt.connect() to a peripheral that has stopped advertising can simply never
@@ -78,7 +79,7 @@ export class Strip {
     try {
       this.emit('requesting device…');
       const dev = await this.transport.pick(this.p, opts);
-      await this.attach(dev.id);
+      await this.attach(dev.id, dev.name);
     } catch (e) {
       this.wantConnected = false;
       if (e && e.name === 'NotFoundError') {
@@ -106,9 +107,9 @@ export class Strip {
     }
   }
 
-  async attach(id) {
+  async attach(id, nameHint) {
     this.wantConnected = true;
-    this.handle = await withTimeout(this.transport.open(this.p, id),
+    this.handle = await withTimeout(this.transport.open(this.p, id, nameHint),
                                     this.opts.connectTimeoutMs, 'connect timed out');
     this.attempt = 0;
     this.transport.onDrop(this.handle, () => this.onDrop());
@@ -152,8 +153,28 @@ export class Strip {
     this.retryTimer = setTimeout(async () => {
       this.retryTimer = null;
       if (!this.wantConnected || !this.remembered) return;
-      try { await this.attach(this.remembered.id); }
-      catch { if (this.wantConnected) this.scheduleRetry(); }
+      try {
+        await this.attach(this.remembered.id, this.remembered.name);
+      } catch {
+        if (!this.wantConnected) return;
+        /* The remembered device may simply not be this strip. It happened: a
+           wrong pick in the chooser stored an address that never advertises
+           again, and the ladder chased that ghost forever. After a few failures,
+           if the platform can find a device without bothering the user, throw
+           the id away and scan afresh. */
+        if (this.attempt >= this.opts.repickAfter && this.transport.canPickSilently) {
+          this.attempt = 0;
+          this.emit('remembered device is not answering — scanning for it again');
+          try {
+            const dev = await this.transport.pick(this.p, { noDialog: true });
+            this.remembered = dev;
+            this.store.set(this.p.id, dev);
+            await this.attach(dev.id, dev.name);
+            return;
+          } catch { /* nothing in range either — fall through and keep trying */ }
+        }
+        this.scheduleRetry();
+      }
     }, delay);
     // Node would hold the process open for this timer; the browser has no unref.
     if (typeof this.retryTimer === 'object' && this.retryTimer.unref) this.retryTimer.unref();
