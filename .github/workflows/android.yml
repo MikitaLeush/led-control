@@ -34,10 +34,17 @@ jobs:
           java-version: '21'
 
       # compileSdk is 36 (see android/variables.gradle) and is not guaranteed to
-      # be on the runner image. This installs it and accepts the licences.
-      - uses: android-actions/setup-android@v3
+      # be on the runner image, so install it directly with the preinstalled
+      # sdkmanager. Deliberately NOT android-actions/setup-android@v3: that action
+      # runs `sdkmanager tools`, and Google removed the `tools` package, so it dies
+      # with "Failed to find package 'tools'". The runner already ships the SDK.
       - name: Ensure compileSdk 36 is present
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          echo "using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
       # src/vendor is generated, not committed — it must exist before cap sync
       # copies webDir into the Android assets.
