@@ -68,3 +68,26 @@ test('master colour scales for iStrip but not for Lotus', () => {
   assert.equal(hex(masterFrame(L, 'rgb', st)).split(' ')[4], 'FF');
   L.state.bright = 100; I.state.bright = 100;
 });
+
+test('advert matching mirrors what each vendor app scans for', () => {
+  // Lotus matches the GAP name only.
+  assert.equal(L.matchAdvert({ name: 'ELK-BLEDOM' }), true);
+  assert.equal(L.matchAdvert({ name: 'ELK-*BLEDOM' }), true, 'encrypted units too');
+  assert.equal(L.matchAdvert({ name: 'LED LIGHT STRIP' }), true);
+  assert.equal(L.matchAdvert({ name: 'XSL-01' }), true);
+  assert.equal(L.matchAdvert({ name: 'Galaxy Buds' }), false);
+  assert.equal(L.matchAdvert({}), false, 'no name is not a match');
+
+  // iStrip matches manufacturer data 54 52 00 57 → company 0x5254, prefix 00 57.
+  assert.equal(I.matchAdvert({ manufacturer: { 21076: [0x00, 0x57, 0x01] } }), true);
+  assert.equal(I.matchAdvert({ manufacturer: { 21076: [0x99, 0x57] } }), false,
+               'right company, wrong payload prefix');
+  assert.equal(I.matchAdvert({ manufacturer: { 76: [0x00, 0x57] } }), false,
+               'right payload, wrong company id');
+  assert.equal(I.matchAdvert({ manufacturer: {} }), false);
+  assert.equal(I.matchAdvert({}), false);
+
+  // The two must never claim each other's device.
+  assert.equal(L.matchAdvert({ manufacturer: { 21076: [0x00, 0x57] } }), false);
+  assert.equal(I.matchAdvert({ name: 'ELK-BLEDOM' }), false);
+});

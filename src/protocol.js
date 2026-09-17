@@ -114,6 +114,15 @@ export const PROFILES = {
     brightness: { min: 0, max: 100, def: 100 },
     state: { r:255, g:255, b:255, bright:100 },
 
+    /* Identify a strip from its advertisement, the way the vendor app does —
+       supportedDevice() matches the GAP name and nothing else
+       (BluetoothLEService.java:1148). Lets the native build skip the chooser. */
+    matchAdvert({ name }) {
+      if (!name) return false;
+      return name.startsWith('ELK') || name.startsWith('XSL-')
+          || name.startsWith('CLK-') || name.startsWith('LED LIGHT STRIP');
+    },
+
     // 7E LL CMD D0 D1 D2 D3 D4 EF
     frame(cmd, ll, d){ return Uint8Array.from([0x7E, ll, cmd, d[0], d[1], d[2], d[3], d[4], 0xEF]); },
 
@@ -145,6 +154,19 @@ export const PROFILES = {
     brightness: { min: 10, max: 100, def: 100 },
     hasGroup: true,
     state: { r:255, g:255, b:255, bright:100, group:1 },
+
+    /* BleConfig.matchProduct(): manufacturer-specific data, AD type 0xFF, payload
+       starting 54 52 00 57. The first two bytes after the type are the company id
+       little-endian, so the id is 0x5254 and the rest of the prefix is 00 57.
+       `manufacturer` is a map of companyId → byte array. */
+    matchAdvert({ manufacturer }) {
+      if (!manufacturer) return false;
+      for (const [id, bytes] of Object.entries(manufacturer)) {
+        if (Number(id) !== 0x5254 || !bytes) continue;
+        if (bytes[0] === 0x00 && bytes[1] === 0x57) return true;
+      }
+      return false;
+    },
 
     // 54 52 00 57 CMD GID + 10 payload bytes
     frame(cmd, payload){

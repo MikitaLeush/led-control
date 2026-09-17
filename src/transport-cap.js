@@ -34,10 +34,41 @@ export class CapacitorBleTransport extends Transport {
     }
   }
 
-  /* Both vendor apps scan unfiltered and match in software, so no service filter
-     here either — these strips do not advertise their service UUID. */
-  async pick(profile) {
-    const { BleClient } = ble();
+  /* No chooser. BleClient.requestDevice() would put up the plugin's own device
+     dialog; neither vendor app does that. They scan unfiltered and match in
+     software — by GAP name (Lotus) or manufacturer data (iStrip) — so do the
+     same and connect to the first strip that matches. Falls back to the dialog
+     only if the scan finds nothing, so there is still a way through. */
+  async pick(profile, { scanMs = 8000 } = {}) {
+    const { BleClient, dataViewToNumbers } = ble();
+
+    const found = await new Promise(resolve => {
+      let done = false;
+      const finish = value => {
+        if (done) return;
+        done = true;
+        BleClient.stopLEScan().catch(() => {});
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), scanMs);
+
+      BleClient.requestLEScan({ allowDuplicates: false }, result => {
+        const manufacturer = {};
+        for (const [id, view] of Object.entries(result.manufacturerData || {})) {
+          manufacturer[id] = dataViewToNumbers(view);
+        }
+        const name = result.localName || (result.device && result.device.name);
+        if (profile.matchAdvert({ name, manufacturer })) {
+          finish({ id: result.device.deviceId, name: name || profile.name });
+        }
+      }).catch(err => finish({ error: err }));
+    });
+
+    if (found && found.id) return found;
+    if (found && found.error) throw found.error;
+
+    // Nothing matched in the scan window — let the user point at it by hand.
     const dev = await BleClient.requestDevice({ optionalServices: [profile.service] });
     return { id: dev.deviceId, name: dev.name || profile.name };
   }
