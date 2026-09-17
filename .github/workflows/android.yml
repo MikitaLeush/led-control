@@ -12,9 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+ required, not 20: `node --test` only expands glob patterns from
+      # Node 22 on. Under 20 it reads "test/**/*.test.mjs" as a literal path and
+      # fails with "Could not find". The dev machine runs 24, so this can only
+      # ever break on the runner.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
 
       - run: npm ci

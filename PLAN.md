@@ -12,7 +12,10 @@
 
 ## Global Constraints
 
-- Node ≥ 20 (machine has v24.15.0, npm 11.12.1).
+- **Node ≥ 22** (machine has v24.15.0, npm 11.12.1). Not 20: `node --test` only
+  expands glob patterns from Node 22 onward, and the test script relies on one. CI
+  pinned to 20 failed with `Could not find 'test/**/*.test.mjs'` while the same
+  command passed locally on 24 — corrected 2026-09-16.
 - **No protocol changes.** Every byte this project emits must match `../../protocol-notes.md`. That document and the frames in `../../led-control.html` are the reference; if they disagree, stop and ask.
 - iStrip+ AES-128 ECB key, verbatim: `34 52 2A 5B 7A 6E 49 2C 08 09 0A 9D 8D 2A 23 F8`.
 - Lotus stream-cipher preset key, verbatim: `2A 7F C1 94 33 DE 45 E0 8B 11 5C A6 09 F2 7D B8`.
