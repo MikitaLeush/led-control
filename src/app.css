@@ -167,6 +167,19 @@ input[type=range]{
   width:100%; height: var(--tap); margin:0;
   accent-color: var(--live); background:transparent; cursor:pointer;
 }
+/* Colour temperature: the track is the scale itself, cold → white → warm (protocol.js cctRgb). */
+input[type=range].cct{
+  -webkit-appearance:none; appearance:none;
+  background: linear-gradient(90deg, #8cffff, #ffffff 50%, #ffd531) center / 100% 8px no-repeat;
+}
+input[type=range].cct::-webkit-slider-thumb{
+  -webkit-appearance:none; width:22px; height:22px; border-radius:50%;
+  background: var(--live); border:2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+input[type=range].cct::-moz-range-thumb{
+  width:18px; height:18px; border-radius:50%;
+  background: var(--live); border:2px solid #fff;
+}
 
 input[type=number]{
   width:76px; min-height:40px; padding:7px 9px;

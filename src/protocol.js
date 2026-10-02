@@ -141,8 +141,8 @@ export const PROFILES = {
 
   istrip: {
     id: 'istrip',
-    name: 'iStrip+',
-    meta: 'service AC50 · char AC52 · 16-byte AES-128 frames',
+    name: 'Sunset lamp',
+    meta: 'iStrip+ · service AC50 · char AC52 · 16-byte AES-128 frames',
     service: '0000ac50-1212-efde-1523-785fedbeda25',
     characteristic: '0000ac52-1212-efde-1523-785fedbeda25',
     // The app matches manufacturer-specific advertising data, not a service UUID
@@ -153,7 +153,8 @@ export const PROFILES = {
                                      dataPrefix: Uint8Array.from([0x00, 0x57]) }] }],
     brightness: { min: 10, max: 100, def: 100 },
     hasGroup: true,
-    state: { r:255, g:255, b:255, bright:100, group:1 },
+    // type = byte 12 "send type": 0 colour picker, 2 colour temperature (§2.5).
+    state: { r:255, g:255, b:255, bright:100, group:1, type:0, cct:50 },
 
     /* BleConfig.matchProduct(): manufacturer-specific data, AD type 0xFF, payload
        starting 54 52 00 57. The first two bytes after the type are the company id
@@ -189,9 +190,21 @@ export const PROFILES = {
         0x00,                                       // mode 0 = static colour
         clamp(r*k,0,255), clamp(g*k,0,255), clamp(b*k,0,255),
         this.state.bright, 100,                     // light, speed
-        0x00,                                       // send type 0 = colour picker
+        this.state.type & 0xff,                     // send type: 0 picker, 2 CCT
         0, 0, 0
       ]);
+    },
+    // A plain colour leaves colour-temperature mode.
+    colour(r,g,b){
+      Object.assign(this.state, { r, g, b, type: 0 });
+      return this.rgb(r, g, b);
+    },
+    /* Colour temperature, 0 = cold … 50 = white … 100 = warm. There is no warm/cold
+       command: the vendor app sends an ordinary RGB colour with send type 2 (§2.6). */
+    cct(v){
+      const { r, g, b } = cctRgb(v);
+      Object.assign(this.state, { r, g, b, type: 2, cct: clamp(v,0,100) });
+      return this.rgb(r, g, b);
     },
     setBrightness(v){
       const s = this.state;
@@ -208,6 +221,17 @@ export const PROFILES = {
   }
 };
 
+/* Cold → white → warm. Warm is the vendor app's own Warm preset, 255/213/49
+   (ui/fashion/main/FashionHomeFragment.java:243); cold is the cool preset in the
+   vendor app's Master Control screen, normalised to full scale. */
+const CCT_COLD = [140, 255, 255], CCT_WHITE = [255, 255, 255], CCT_WARM = [255, 213, 49];
+export function cctRgb(v){
+  const t = clamp(v, 0, 100) / 50;
+  const [a, b, k] = t <= 1 ? [CCT_COLD, CCT_WHITE, t] : [CCT_WHITE, CCT_WARM, t - 1];
+  const mix = i => Math.round(a[i] + (b[i] - a[i]) * k);
+  return { r: mix(0), g: mix(1), b: mix(2) };
+}
+
 /* One shared control surface, two protocols with different scales. This is the whole
    translation layer, kept pure so the self-test can exercise it without hardware. */
 export function masterFrame(profile, kind, st){
@@ -215,6 +239,7 @@ export function masterFrame(profile, kind, st){
   if (kind === 'off') return profile.power(false);
 
   profile.state.r = st.r; profile.state.g = st.g; profile.state.b = st.b;
+  if ('type' in profile.state) profile.state.type = 0;   // master colour is never CCT
 
   // 0 must mean dark on both, not "off here, 10% there" — iStrip's own floor is 10.
   if (st.bright === 0) return profile.power(false);

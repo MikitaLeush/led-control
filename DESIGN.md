@@ -26,7 +26,8 @@ drives both, and the byte-level behaviour is identical to the page that already 
 ## Non-goals
 
 - Play Store release and release signing. Debug-signed APK, sideloaded.
-- Effects, music reactivity, timers, colour temperature. The protocols for several of these
+- Effects, music reactivity, timers, Lotus colour temperature (the iStrip lamp's CCT
+  slider is in — it is RGB plus send type 2). The protocols for several of these
   are documented but untested; adding them is separate work.
 - iOS.
 - Any change to the protocol itself. This project repackages known-good bytes.
@@ -134,6 +135,22 @@ activation — calling it on load fails with
 | First connect after launch | chooser dialog, one tap | no dialog, one tap |
 | Reconnect after a drop | automatic | automatic |
 | Across restarts | chooser again | one tap, no dialog |
+
+**Second correction, 2026-09-28, measured on the real strips.** The gesture *can* be
+supplied: `webContents.executeJavaScript(code, true)` runs `code` with user activation,
+and `requestDevice()` accepts it. The shell now connects both strips on launch with no
+tap. Two more measured facts forced the rest of the redesign:
+
+- The iStrip advertises **no GAP name** — Electron lists it as
+  `Unknown or Unsupported Device (MAC)`, one row among ~20 identical ones. Remembering by
+  name could never work for it, and an unfiltered in-app picker could not identify it.
+- The profile's manufacturer-data filter (`0x5254`, prefix `00 57`) *does* isolate it:
+  with that filter the scan returned exactly one device.
+
+So the renderer always scans with the profile's filters, tells the main process which
+profile it is connecting (`ble-intent`, synchronous), and the main process remembers the
+chosen address per profile once the strip actually connects. The decision logic is
+`electron/chooser.js`, pure and unit-tested.
 
 Reconnection after a drop needs no gesture in either, because the `BluetoothDevice` object
 is still held in memory and `gatt.connect()` may be called on it freely. True silent

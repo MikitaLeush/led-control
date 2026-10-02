@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AES, lotusEncrypt, hex, PROFILES, masterFrame } from '../src/protocol.js';
+import { AES, lotusEncrypt, hex, PROFILES, masterFrame, cctRgb } from '../src/protocol.js';
 
 const L = PROFILES.lotus, I = PROFILES.istrip;
 const bytes = s => Uint8Array.from(s.split(' ').map(x => parseInt(x, 16)));
@@ -39,6 +39,22 @@ test('iStrip frames match protocol-notes.md', () => {
                'brightness is applied to RGB on the client, as the vendor app does');
   assert.equal(hex(I.lightCmd(50)), '54 52 00 57 07 01 32 00 00 00 00 00 00 00 00 00');
   I.state.bright = 100;
+});
+
+test('iStrip colour temperature is RGB with send type 2', () => {
+  I.state.bright = 100; I.state.group = 1;
+  assert.deepEqual(cctRgb(0),   { r: 140, g: 255, b: 255 }, 'cold end');
+  assert.deepEqual(cctRgb(50),  { r: 255, g: 255, b: 255 }, 'middle is white');
+  assert.deepEqual(cctRgb(100), { r: 255, g: 213, b: 49 },  "vendor app's Warm preset");
+  assert.equal(hex(I.cct(100)), '54 52 00 57 02 01 00 FF D5 31 64 64 02 00 00 00');
+  assert.equal(I.state.type, 2);
+  assert.equal(hex(I.setBrightness(100)).split(' ')[12], '02',
+               'brightness re-send stays in CCT mode');
+  assert.equal(hex(I.colour(255, 0, 0)), '54 52 00 57 02 01 00 FF 00 00 64 64 00 00 00 00',
+               'a plain colour leaves CCT mode');
+  I.cct(0);
+  assert.equal(hex(masterFrame(I, 'rgb', { r: 0, g: 0, b: 255, bright: 100 })).split(' ')[12],
+               '00', 'master colour leaves CCT mode');
 });
 
 test('iStrip encrypts every frame with the extracted AES key', () => {

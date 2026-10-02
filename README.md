@@ -3,12 +3,13 @@
 One control surface for two Bluetooth LE LED strip controllers that speak entirely
 different protocols:
 
-| | Lotus Lantern (`wl.smartled`) | iStrip+ (`com.ben.istrips`) |
+| | Lotus Lantern (`wl.smartled`) | iStrip+ (`com.ben.istrips`) — the sunset lamp |
 |---|---|---|
 | Service | `0000fff0-…` | `0000AC50-1212-EFDE-1523-785FEDBEDA25` |
 | Frame | 9 bytes, `7E … EF` | 16 bytes, `54 52 00 57 …` |
 | Encryption | only on `ELK-*` units, cmds 1/3/4 | **always**, AES-128 ECB |
 | Brightness | its own command, 0–100 | scale RGB client-side, 10–100 |
+| White temperature | not wired up | RGB cold→white→warm, send-type byte 12 = 2 |
 
 Both protocols were reverse-engineered from the vendor APKs and are documented, with
 citations down to file and line, in the vault's `protocol-notes.md`. Both are confirmed
@@ -55,12 +56,16 @@ relaxes it by a different amount. Measured, not assumed:
 | | First connect after launch | Reconnect after a drop |
 |---|---|---|
 | Chrome | chooser dialog, one tap | automatic |
-| Electron | no dialog, one tap | automatic |
+| Electron | **none — connects on its own** | automatic |
 | Android APK | **none — connects on its own** | automatic |
 
-Only Android gets a silent cold start, because `BleClient.getDevices([id])` reopens a
-remembered device with no user gesture. Electron exposes no `getDevices()` and still
-requires a gesture for `requestDevice()`; it removes the dialog, not the tap.
+Android reopens a remembered device with `BleClient.getDevices([id])`, no gesture needed.
+Electron has no `getDevices()`, but the main process calls `requestDevice()` through
+`executeJavaScript(…, true)`, which counts as a user gesture, and answers the chooser
+itself. It remembers each strip by Bluetooth address, per profile, in its userData
+(`ble-devices.json`), because the iStrip advertises no name. A strip that is out of range
+at launch is looked for again every 20 s until it shows up or you press Disconnect. The
+first time, if several strips of one kind are in range, the app asks once which is yours.
 
 An ELK-BLEDOM drops an idle link as a matter of course. The app treats that as normal and
 reconnects on its own, backing off to one attempt every 15 s, with no deadline — Connect
@@ -82,6 +87,8 @@ No bundler. `src/` is native ES modules, loaded directly by Electron over a priv
 
 ## Not implemented
 
-Colour temperature, effects, speed, timers and music reactivity. The frames for several of
+Lotus colour temperature, effects, speed, timers and music reactivity. (The sunset lamp's
+white-temperature slider is implemented — it is an RGB colour with send type 2, see
+`protocol-notes.md` §2.6.) The frames for several of
 these are documented but were never exercised against hardware — see the verification
 section of `protocol-notes.md` before trusting any of them.

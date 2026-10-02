@@ -33,7 +33,7 @@ export class DevicePanel {
     this.p = strip.p;
     this.throttle = makeThrottle(50);
     this.render(root);
-    strip.onChange((_s, msg, isErr) => { this.tx.set(msg, isErr); this.refresh(); });
+    strip.onChange((_s, msg, isErr) => { if (msg != null) this.tx.set(msg, isErr); this.refresh(); });
     this.refresh();
   }
 
@@ -68,6 +68,16 @@ export class DevicePanel {
             <input type="range" class="bright" min="${p.brightness.min}"
                    max="${p.brightness.max}" value="${p.brightness.def}">
           </div>
+          ${p.cct ? `
+          <div class="field">
+            <div class="flabel">White temperature <span class="v cval">white</span></div>
+            <input type="range" class="cct" min="0" max="100" value="${p.state.cct}">
+          </div>
+          <div class="row">
+            <button class="cct-preset" data-v="0">Cool</button>
+            <button class="cct-preset" data-v="50">White</button>
+            <button class="cct-preset" data-v="100">Warm</button>
+          </div>` : ''}
         </fieldset>
         <div class="tx"></div>
       </div>`;
@@ -91,11 +101,31 @@ export class DevicePanel {
     el.querySelector('.pwr-off').onclick = () => this.strip.send(p.power(false));
 
     this.colour.oninput = () => {
-      Object.assign(p.state, rgbOf(this.colour.value));
+      const c = rgbOf(this.colour.value);
+      Object.assign(p.state, c);
       this.swatchHex.textContent = this.colour.value;
       setLive(this.colour.value, p.state.bright);
-      this.throttle(() => this.strip.send(p.rgb(p.state.r, p.state.g, p.state.b)));
+      this.throttle(() => this.strip.send(p.colour ? p.colour(c.r, c.g, c.b)
+                                                   : p.rgb(c.r, c.g, c.b)));
     };
+    if (p.cct) {
+      this.cct  = el.querySelector('.cct');
+      this.cval = el.querySelector('.cval');
+      const setCct = v => {
+        const frame = p.cct(v);                     // updates p.state.r/g/b too
+        this.syncWidgets();
+        setLive(hexOf(p.state), p.state.bright);
+        return frame;
+      };
+      this.cct.oninput = () => {
+        const v = +this.cct.value;
+        setCct(v);
+        this.throttle(() => this.strip.send(p.cct(v)));
+      };
+      el.querySelectorAll('.cct-preset').forEach(b => {
+        b.onclick = () => this.strip.send(setCct(+b.dataset.v));
+      });
+    }
     this.bright.oninput = () => {
       p.state.bright = +this.bright.value;
       this.bval.textContent = this.bright.value;
@@ -115,6 +145,11 @@ export class DevicePanel {
     this.swatchHex.textContent = this.colour.value;
     this.bright.value = p.state.bright;
     this.bval.textContent = p.state.bright;
+    if (this.cct) {
+      this.cct.value = p.state.cct;
+      this.cval.textContent = p.state.type !== 2 ? 'off'
+        : p.state.cct < 40 ? 'cool' : p.state.cct > 60 ? 'warm' : 'white';
+    }
   }
 
   refresh() {
@@ -124,9 +159,11 @@ export class DevicePanel {
     this.controls.disabled = !s.connected;
     // Never disabled while retrying. Automatic recovery is a convenience; taking
     // away the manual escape while it runs is how a stuck retry becomes a dead app.
-    this.btnCon.disabled = s.connected;
+    // Disabled while a connect is in flight: a second tap would only join it anyway.
+    this.btnCon.disabled = s.connected || !!s.connecting;
     this.btnDis.disabled = !s.connected && !s.retrying;
     this.btnCon.textContent = s.connected ? 'Connected'
+      : s.connecting ? 'Connecting…'
       : s.retrying ? 'Reconnecting — tap to choose again'
       : (s.remembered && s.remembered.name) ? `Reconnect ${s.remembered.name}`
       : 'Connect';
@@ -152,7 +189,7 @@ export class MasterPanel {
     el.innerHTML = `
       <div class="phead">
         <span class="dot"></span>
-        <span class="name">Both strips</span>
+        <span class="name">Both lights</span>
         <span class="count">0 / 0</span>
       </div>
       <div class="row">
