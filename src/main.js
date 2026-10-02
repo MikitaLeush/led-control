@@ -7,6 +7,10 @@ import { bootstrap } from './ui.js';
 const isNative = () => !!(globalThis.Capacitor && globalThis.Capacitor.isNativePlatform
                           && globalThis.Capacitor.isNativePlatform());
 
+/* The Electron shell answers the Bluetooth chooser for us and connects on launch
+   with no tap — see electron/main.js. */
+const host = (globalThis.ledHost && globalThis.ledHost.isElectron) ? globalThis.ledHost : null;
+
 async function makeTransport() {
   // The single-file build has no module graph to import from, so it registers a
   // factory instead. Everywhere else the import is dynamic, which keeps the
@@ -17,7 +21,9 @@ async function makeTransport() {
     return new CapacitorBleTransport();
   }
   const { WebBluetoothTransport } = await import('./transport-web.js');
-  return new WebBluetoothTransport();
+  return host
+    ? new WebBluetoothTransport({ beforePick: p => host.intent(p.id), alwaysNarrow: true })
+    : new WebBluetoothTransport();
 }
 
 const status = document.getElementById('btstatus');
@@ -25,11 +31,6 @@ const say = (html, bad) => {
   status.innerHTML = html;
   status.classList.toggle('flag', !!bad);
 };
-
-/* An Electron shell answers the Bluetooth chooser for us. It cannot skip the
-   user gesture — requestDevice() still needs a tap, and Electron exposes no
-   getDevices() — so this is "one tap, no dialog", not a silent cold start. */
-const host = (globalThis.ledHost && globalThis.ledHost.isElectron) ? globalThis.ledHost : null;
 
 const transport = await makeTransport();
 const app = bootstrap({
@@ -44,8 +45,7 @@ const cap = await transport.available();
 if (!cap.ok) {
   say(cap.reason, true);
 } else if (host) {
-  say('Bluetooth ready · no device dialog — tap Connect once per strip after a restart, '
-    + 'then it stays connected on its own');
+  say('Bluetooth ready · strips connect on their own');
 } else if (cap.silentReconnect) {
   say('Bluetooth ready · reconnects without asking');
   let back = 0;
@@ -57,13 +57,24 @@ if (!cap.ok) {
 }
 
 /* ── host shell bridge ─────────────────────────────────────────────────────
-   In Electron the main process answers the Bluetooth chooser. Once it knows a
-   strip's name it reconnects silently; the first time, it sends the scan results
-   here and we draw the picker ourselves. Harmless in a plain browser. */
+   In Electron the main process answers the Bluetooth chooser and calls
+   __ledAutoconnect on launch (and again while a strip is missing). Only when
+   several strips match and none is remembered does it send the candidates here,
+   and we draw the picker ourselves. Harmless in a plain browser. */
 if (host) {
-  const known = () => app.strips.map(s => s.remembered && s.remembered.name).filter(Boolean);
-  host.remember(known());
-  app.strips.forEach(s => s.onChange(() => host.remember(known())));
+  app.strips.forEach(s => s.onChange((_s, msg, isErr) => {
+    if (s.connected) host.connected(s.p.id);
+    // Frame hex is noise here; connection events are what diagnosis needs.
+    if (msg != null && !/^[0-9A-F]{2}( [0-9A-F]{2})+/.test(msg)) host.log(`${s.p.id}: ${isErr ? 'ERROR ' : ''}${msg}`);
+  }));
+
+  globalThis.__ledAutoconnect = async id => {
+    const s = app.strips.find(x => x.p.id === id);
+    if (!s || s.connected || s.retrying || s.connecting || s.userOff) return 'skip';
+    await s.connect({ auto: true });
+    return s.connected ? 'ok' : 'failed';
+  };
+  if (cap.ok) host.ready();
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet';

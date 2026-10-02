@@ -6,12 +6,22 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('ledHost', {
   isElectron: true,
 
-  /** Device names the shell may reconnect to without asking. */
-  remember: names => ipcRenderer.send('ble-remember', names),
+  /** Which strip the next requestDevice() is for. Synchronous so the main
+      process knows before the chooser fires. */
+  intent: profileId => ipcRenderer.sendSync('ble-intent', profileId),
+
+  /** The page is wired up and Bluetooth works — the shell may start connecting. */
+  ready: () => ipcRenderer.send('ble-ready'),
+
+  /** Mirror a strip's status line to the shell's stdout, for diagnosis. */
+  log: line => ipcRenderer.send('ble-log', String(line)),
+
+  /** A strip connected — the shell may now reopen that device without asking. */
+  connected: profileId => ipcRenderer.send('ble-connected', profileId),
 
   /** Answer an open chooser. Pass '' to cancel it. */
   pickDevice: id => ipcRenderer.send('ble-pick', id || ''),
 
-  /** Called with [{id, name}] while a first-run scan is running. */
+  /** Called with [{id, name}] when several strips match and none is remembered. */
   onDevices: cb => ipcRenderer.on('ble-devices', (_e, list) => cb(list))
 });

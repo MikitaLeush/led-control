@@ -5,9 +5,14 @@
 import { Transport } from './transport.js';
 
 export class WebBluetoothTransport extends Transport {
-  constructor() {
+  /* `beforePick(profile)` runs just before requestDevice(); `alwaysNarrow` forces
+     the profile's filters. Electron sets both: the shell answers the chooser
+     itself, so it must know which strip is wanted and see only its candidates. */
+  constructor({ beforePick = null, alwaysNarrow = false } = {}) {
     super();
     this.devices = new Map();          // id → BluetoothDevice, for reopening
+    this.beforePick = beforePick;
+    this.alwaysNarrow = alwaysNarrow;
   }
 
   async available() {
@@ -30,7 +35,17 @@ export class WebBluetoothTransport extends Transport {
   /* Both vendor apps scan with no scan filter and match in software, so accept-all
      is the default here. Filtering on the service UUID returns an empty chooser:
      these strips do not advertise theirs. */
-  async pick(profile, { narrow } = {}) {
+  /* Chromium allows one chooser at a time; a second requestDevice() cancels the
+     first. Every scan waits its turn, whichever strip it is for. */
+  pick(profile, opts = {}) {
+    const run = (this.queue || Promise.resolve()).then(() => this._pick(profile, opts));
+    this.queue = run.catch(() => {});
+    return run;
+  }
+
+  async _pick(profile, { narrow } = {}) {
+    narrow = narrow || this.alwaysNarrow;
+    if (this.beforePick) this.beforePick(profile);
     const wide = { acceptAllDevices: true, optionalServices: [profile.service] };
     let dev;
     try {

@@ -82,3 +82,20 @@ test('restore reopens a remembered device without a picker', async () => {
   assert.equal(second.connected, true);
   second.disconnect();
 });
+
+/* Seen on real hardware 2026-09-28: a Connect tap landed while the Electron shell's
+   autoconnect was still scanning. Two requestDevice() calls fought over the one
+   chooser — the iStrip never connected, the Lotus ended up with two links. */
+test('a connect while one is in flight joins it instead of starting a second', async () => {
+  const t = new FakeTransport();
+  let picks = 0, opens = 0;
+  const pick = t.pick.bind(t), open = t.open.bind(t);
+  t.pick = async p => { picks++; await new Promise(r => setTimeout(r, 20)); return pick(p); };
+  t.open = async (p, id) => { opens++; return open(p, id); };
+  const s = new Strip(PROFILES.istrip, t, newStore());
+  await Promise.all([s.connect({ auto: true }), s.connect({})]);
+  assert.equal(picks, 1, 'one scan');
+  assert.equal(opens, 1, 'one link');
+  assert.equal(s.connected, true);
+  s.disconnect();
+});

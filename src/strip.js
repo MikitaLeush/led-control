@@ -54,6 +54,8 @@ export class Strip {
     this.opts = { ...DEFAULTS, ...opts };
     this.handle = null;
     this.wantConnected = false;      // false after a deliberate Disconnect
+    this.userOff = false;            // true from a deliberate Disconnect until the next connect()
+    this.connecting = null;          // the connect() in flight, if any
     this.retryTimer = null;
     this.attempt = 0;
     this.listeners = [];
@@ -71,18 +73,34 @@ export class Strip {
 
   /* ---- connecting ---- */
 
-  async connect(opts = {}) {
+  /* One connect at a time. A second call — a tap while the Electron shell's
+     autoconnect is still scanning — joins the one in flight; two requestDevice()
+     calls fight over the single chooser and neither lands cleanly. */
+  connect(opts = {}) {
+    if (!this.connecting) {
+      this.connecting = this._connect(opts).finally(() => {
+        this.connecting = null;
+        this.emit(null);               // state changed, no new status line
+      });
+      this.emit(opts.auto ? 'looking for the strip…' : 'requesting device…');
+    }
+    return this.connecting;
+  }
+
+  async _connect(opts) {
     // A manual connect supersedes any pending automatic retry, so the two
     // cannot race and open two links to the same strip.
     clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    this.userOff = false;
     try {
-      this.emit('requesting device…');
       const dev = await this.transport.pick(this.p, opts);
       await this.attach(dev.id, dev.name);
     } catch (e) {
       this.wantConnected = false;
-      if (e && e.name === 'NotFoundError') {
+      if (opts.auto && e && e.name === 'NotFoundError') {
+        this.emit('not in range — still looking, it connects when it shows up');
+      } else if (e && e.name === 'NotFoundError') {
         this.emit('no device chosen — if the list was empty, untick "Narrow the device '
                 + 'picker", and make sure the strip is powered and not already connected '
                 + 'to the phone app', true);
@@ -120,6 +138,7 @@ export class Strip {
   }
 
   disconnect() {
+    this.userOff = true;               // a shell that autoconnects leaves this strip alone
     this.wantConnected = false;
     clearTimeout(this.retryTimer);
     this.retryTimer = null;
